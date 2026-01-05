@@ -1,0 +1,71 @@
+
+---
+
+## `.gitignore`
+```gitignore
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.conda/
+
+# =========================
+# Testing / tooling
+# =========================
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+# =========================
+# Jupyter / notebooks
+# =========================
+.ipynb_checkpoints/
+*.ipynb
+
+# =========================
+# IDEs / editors
+# =========================
+.vscode/
+.idea/
+*.iml
+
+# =========================
+# OS junk
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Experiment outputs
+# (keep code, ignore generated results)
+# =========================
+experiments/out/
+*.png
+*.csv
+
+# If you want to keep CSVs but ignore only plots, remove "*.csv" above.
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/
