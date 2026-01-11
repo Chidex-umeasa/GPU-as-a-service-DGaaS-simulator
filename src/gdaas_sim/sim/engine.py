@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 import heapq
 
 
@@ -19,6 +19,7 @@ class Job:
     arrival_time: float
     duration: float
     gpus_required: int = 1
+    tenant_id: str = "tenant_0"  # NEW: multi-tenant support
 
     # Filled by simulator
     start_time: Optional[float] = None
@@ -111,6 +112,7 @@ class SimEngine:
             cluster.allocate(job.gpus_required)
             job.start_time = self.time
             job.finish_time = None
+            scheduler.on_job_start(job, now=self.time)   # NEW: notify scheduler
             metrics.on_job_start(job, now=self.time)
 
             # Schedule finish
