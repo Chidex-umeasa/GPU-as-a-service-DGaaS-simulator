@@ -10,6 +10,7 @@ from gdaas_sim.cluster.cluster import GPUCluster
 from gdaas_sim.workloads.synthetic import WorkloadConfig, generate_synthetic
 from gdaas_sim.scheduler.fifo import FIFOScheduler
 from gdaas_sim.scheduler.sjf import SJFScheduler
+from gdaas_sim.scheduler.fair_share import TenantFairScheduler
 from gdaas_sim.metrics.collector import MetricsCollector
 
 
@@ -33,13 +34,16 @@ def run_one(scheduler_name: str, total_gpus: int, seed: int, arrival_rate: float
         scheduler = FIFOScheduler()
     elif scheduler_name == "sjf":
         scheduler = SJFScheduler()
+    elif scheduler_name == "fair":
+        scheduler = TenantFairScheduler()
     else:
-        raise ValueError("scheduler must be fifo or sjf")
+        raise ValueError("scheduler must be fifo, sjf, or fair")
 
     engine.run(jobs=jobs, cluster=cluster, scheduler=scheduler, metrics=metrics)
 
     sim_end = engine.time
     util = metrics.busy_gpu_time / (total_gpus * sim_end) if sim_end > 0 else 0.0
+    jain = metrics.jain_fairness()
 
     return {
         "scheduler": scheduler_name,
@@ -55,6 +59,7 @@ def run_one(scheduler_name: str, total_gpus: int, seed: int, arrival_rate: float
         "avg_turnaround": (sum(metrics.turnaround_times) / len(metrics.turnaround_times))
         if metrics.turnaround_times
         else None,
+        "jain_gpu_time": jain,
     }
 
 
@@ -69,7 +74,7 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
 
     rows = []
-    for sch in ["fifo", "sjf"]:
+    for sch in ["fifo", "sjf", "fair"]:
         for rate in args.arrival_rates:
             for seed in args.seeds:
                 rows.append(run_one(sch, args.total_gpus, seed, rate))
@@ -79,10 +84,10 @@ def main():
     df.to_csv(csv_path, index=False)
     print(f"Wrote {csv_path}")
 
-    # Plot: avg wait vs load
-    for metric in ["avg_wait", "p95_wait", "utilization"]:
+    # Plot: avg wait vs load, p95 wait vs load, utilization vs load, fairness vs load
+    for metric in ["avg_wait", "p95_wait", "utilization", "jain_gpu_time"]:
         plt.figure()
-        for sch in ["fifo", "sjf"]:
+        for sch in ["fifo", "sjf", "fair"]:
             sub = df[df["scheduler"] == sch].groupby("arrival_rate")[metric].mean().reset_index()
             plt.plot(sub["arrival_rate"], sub[metric], marker="o", label=sch)
         plt.xlabel("arrival_rate (jobs/time unit)")
