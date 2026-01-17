@@ -9,6 +9,9 @@ class MetricsCollector:
     arrivals: int = 0
     starts: int = 0
     finishes: int = 0
+    sla_wait_violations: int = 0
+    sla_deadline_violations: int = 0
+
 
     # time accounting for utilization
     last_time: float = 0.0
@@ -42,6 +45,20 @@ class MetricsCollector:
             self.wait_times.append(job.start_time - job.arrival_time)
         if job.finish_time is not None:
             self.turnaround_times.append(job.finish_time - job.arrival_time)
+
+        if job.start_time is not None:
+            wait = job.start_time - job.arrival_time
+            self.wait_times.append(wait)
+
+            if job.max_wait is not None and wait > job.max_wait:
+                self.sla_wait_violations += 1
+
+        if job.finish_time is not None:
+            tat = job.finish_time - job.arrival_time
+            self.turnaround_times.append(tat)
+
+            if job.deadline is not None and job.finish_time > job.deadline:
+                self.sla_deadline_violations += 1
 
         # per-tenant GPU time (approx = duration * gpus_required)
         if job.start_time is not None and job.finish_time is not None:
