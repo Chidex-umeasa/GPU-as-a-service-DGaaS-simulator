@@ -1,0 +1,18 @@
+# GDaaS Simulator — Default Experiment Configuration
+# Run with: python experiments/run_experiment.py --config experiments/config_default.yaml
+
+total_gpus: 16
+n_jobs: 800
+
+schedulers:
+  - fifo
+  - sjf
+  - fair
+  - edf
+  - priority
+  - rr
+  - backfill
+
+seeds: [1, 2, 3]
+arrival_rates: [0.2, 0.5, 0.9]
+outdir: experiments/out
