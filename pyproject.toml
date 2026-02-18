@@ -1,19 +1,27 @@
 [project]
 name = "gdaas-sim"
-version = "0.1.0"
+version = "0.2.0"
 description = "GPU-as-a-Service (GDaaS) discrete-event simulator"
 requires-python = ">=3.10"
 dependencies = [
   "numpy>=1.24",
   "pandas>=2.0",
-  "matplotlib>=3.7"
+  "matplotlib>=3.7",
+  "rich>=13.0",
+  "plotly>=5.0",
+  "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "ruff>=0.4.0"]
+dev       = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.4.0"]
+dashboard = ["streamlit>=1.32"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts   = "-v --tb=short"
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
