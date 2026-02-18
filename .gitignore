@@ -1,8 +1,3 @@
-
----
-
-## `.gitignore`
-```gitignore
 # =========================
 # Python
 # =========================
@@ -56,13 +51,9 @@ Thumbs.db
 
 # =========================
 # Experiment outputs
-# (keep code, ignore generated results)
+# (ignore generated results, keep project screenshots)
 # =========================
 experiments/out/
-*.png
-*.csv
-
-# If you want to keep CSVs but ignore only plots, remove "*.csv" above.
 
 # =========================
 # Logs
