@@ -26,19 +26,18 @@ class SJFScheduler(SchedulerBase):
 
         # We must find the shortest job that fits available GPUs.
         # We'll temporarily pop until we find a runnable job.
-        tmp = []
+        tmp: List[Tuple[float, int, Job]] = []
         chosen = None
 
         while self._heap:
-            _, _, job = heapq.heappop(self._heap)
+            dur, seq, job = heapq.heappop(self._heap)  # preserve original seq
             if job.gpus_required <= available_gpus:
                 chosen = job
                 break
-            tmp.append(job)
+            tmp.append((dur, seq, job))  # store full tuple, not just job
 
-        # Push back the ones we skipped
-        for j in tmp:
-            self._seq += 1
-            heapq.heappush(self._heap, (j.duration, self._seq, j))
+        # Push back skipped entries with their ORIGINAL keys — seq is never mutated
+        for item in tmp:
+            heapq.heappush(self._heap, item)
 
         return chosen
