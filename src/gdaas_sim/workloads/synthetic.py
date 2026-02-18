@@ -23,6 +23,9 @@ class WorkloadConfig:
     interactive_deadline_slack: float = 20.0  # deadline = arrival + slack
     batch_deadline_slack: Optional[float] = None  # None -> no deadline
 
+    # Priority levels drawn uniformly from [0, priority_levels)
+    priority_levels: int = 4
+
     seed: int = 7
 
 
@@ -41,6 +44,7 @@ def generate_synthetic(cfg: WorkloadConfig) -> List[Job]:
     tenants = rng.choice(tenant_ids, size=cfg.n_jobs)
 
     is_interactive = rng.random(cfg.n_jobs) < cfg.interactive_frac
+    priorities = rng.integers(0, max(cfg.priority_levels, 1), size=cfg.n_jobs)
 
     jobs: List[Job] = []
     for i in range(cfg.n_jobs):
@@ -63,6 +67,7 @@ def generate_synthetic(cfg: WorkloadConfig) -> List[Job]:
                 tenant_id=str(tenants[i]),
                 max_wait=max_wait,
                 deadline=deadline,
+                priority=int(priorities[i]),
             )
         )
 
