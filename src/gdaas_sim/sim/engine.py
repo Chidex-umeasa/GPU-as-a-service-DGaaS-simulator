@@ -21,10 +21,13 @@ class Job:
     gpus_required: int = 1
     tenant_id: str = "tenant_0"  # NEW: multi-tenant support
 
-    # NEW: SLA fields
+    # SLA fields
     deadline: Optional[float] = None      # absolute simulation time deadline
     max_wait: Optional[float] = None      # max allowed queue wait
-    
+
+    # Scheduling priority: higher integer = higher priority (used by PriorityScheduler)
+    priority: int = 0
+
     # Filled by simulator
     start_time: Optional[float] = None
     finish_time: Optional[float] = None
