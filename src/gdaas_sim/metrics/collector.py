@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -11,7 +11,7 @@ class MetricsCollector:
     finishes: int = 0
     sla_wait_violations: int = 0
     sla_deadline_violations: int = 0
-
+    preemptions: int = 0
 
     # time accounting for utilization
     last_time: float = 0.0
@@ -25,6 +25,12 @@ class MetricsCollector:
     # per-tenant stats (for fairness)
     tenant_gpu_time: Dict[str, float] = field(default_factory=dict)
 
+    # cost tracking
+    tenant_cost: Dict[str, float] = field(default_factory=dict)
+
+    # utilization history: list of (time, raw_busy_gpu_count) snapshots
+    utilization_snapshots: List[Tuple[float, float]] = field(default_factory=list)
+
     def _record_interval(self, now: float) -> None:
         """Integrate GPU usage over [last_time, now] using the current busy count."""
         dt = now - self.last_time
@@ -33,7 +39,7 @@ class MetricsCollector:
         self.busy_gpu_time += self._current_busy_gpus * dt
         self.last_time = now
 
-    # Keep _update_util as a compatibility alias (used by snapshot_utilization)
+    # Keep _update_util as a compatibility alias
     def _update_util(self, now: float, cluster) -> None:
         self._record_interval(now)
 
@@ -45,15 +51,21 @@ class MetricsCollector:
         # Record the interval with the PREVIOUS busy count, then add this job
         self._record_interval(now)
         self._current_busy_gpus += job.gpus_required
+        # Snapshot AFTER updating busy count
+        self.utilization_snapshots.append((now, float(self._current_busy_gpus)))
 
     def on_job_finish(self, job, now: float) -> None:
         self.finishes += 1
         # Record the interval while this job is still counted as busy, then remove it
         self._record_interval(now)
         self._current_busy_gpus -= job.gpus_required
+        # Snapshot AFTER updating busy count
+        self.utilization_snapshots.append((now, float(self._current_busy_gpus)))
 
-        if job.start_time is not None:
-            wait = job.start_time - job.arrival_time
+        # Use first_start_time for wait if available (handles preempted jobs correctly)
+        first_start = getattr(job, 'first_start_time', None) or job.start_time
+        if first_start is not None:
+            wait = first_start - job.arrival_time
             self.wait_times.append(wait)
             if job.max_wait is not None and wait > job.max_wait:
                 self.sla_wait_violations += 1
@@ -64,12 +76,31 @@ class MetricsCollector:
             if job.deadline is not None and job.finish_time > job.deadline:
                 self.sla_deadline_violations += 1
 
-        # per-tenant GPU time (approx = duration * gpus_required)
+        # per-tenant GPU time and cost
         if job.start_time is not None and job.finish_time is not None:
             runtime = job.finish_time - job.start_time
             gpu_time = runtime * job.gpus_required
             self.tenant_gpu_time[job.tenant_id] = (
                 self.tenant_gpu_time.get(job.tenant_id, 0.0) + gpu_time
+            )
+            cost = runtime * job.gpus_required * getattr(job, 'cost_per_gpu_hour', 1.0)
+            self.tenant_cost[job.tenant_id] = (
+                self.tenant_cost.get(job.tenant_id, 0.0) + cost
+            )
+
+    def on_job_preempted(self, job, now: float) -> None:
+        """Record a preemption event: count it and record partial cost."""
+        self.preemptions += 1
+        # Record the interval while job was still counted as busy, then subtract
+        self._record_interval(now)
+        self._current_busy_gpus -= job.gpus_required
+
+        # Record partial cost for the time the job ran before preemption
+        if job.start_time is not None:
+            elapsed = now - job.start_time
+            cost = elapsed * job.gpus_required * getattr(job, 'cost_per_gpu_hour', 1.0)
+            self.tenant_cost[job.tenant_id] = (
+                self.tenant_cost.get(job.tenant_id, 0.0) + cost
             )
 
     def finalize(self, now: float, cluster) -> None:
@@ -96,3 +127,23 @@ class MetricsCollector:
             return 1.0
         n = len(vals)
         return (s * s) / (n * sq)
+
+    def drf_fairness(self) -> Optional[float]:
+        """
+        DRF-inspired fairness index based on per-tenant GPU time.
+
+        Computes: 1 - (std / (mean + 1e-9)) clamped to [0, 1].
+        Higher = fairer (more equal GPU time distribution across tenants).
+        Returns None if no tenant data.
+        """
+        if not self.tenant_gpu_time:
+            return None
+        vals = list(self.tenant_gpu_time.values())
+        if len(vals) == 1:
+            return 1.0
+        n = len(vals)
+        mean = sum(vals) / n
+        variance = sum((v - mean) ** 2 for v in vals) / n
+        std = variance ** 0.5
+        score = 1.0 - (std / (mean + 1e-9))
+        return max(0.0, min(1.0, score))
