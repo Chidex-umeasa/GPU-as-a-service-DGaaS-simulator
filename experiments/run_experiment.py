@@ -49,38 +49,50 @@ from gdaas_sim.scheduler.edf import EDFScheduler
 from gdaas_sim.scheduler.priority import PriorityScheduler
 from gdaas_sim.scheduler.round_robin import RoundRobinScheduler
 from gdaas_sim.scheduler.backfill import EASYBackfillScheduler
+from gdaas_sim.scheduler.preemptive_priority import PreemptivePriorityScheduler
+from gdaas_sim.scheduler.weighted_fair import WeightedFairShareScheduler
+from gdaas_sim.scheduler.gang import GangScheduler
 
 console = Console() if RICH_AVAILABLE else None
 
 SCHEDULER_MAP = {
-    "fifo":     FIFOScheduler,
-    "sjf":      SJFScheduler,
-    "fair":     TenantFairScheduler,
-    "edf":      EDFScheduler,
-    "priority": PriorityScheduler,
-    "rr":       RoundRobinScheduler,
-    "backfill": EASYBackfillScheduler,
+    "fifo":               FIFOScheduler,
+    "sjf":                SJFScheduler,
+    "fair":               TenantFairScheduler,
+    "edf":                EDFScheduler,
+    "priority":           PriorityScheduler,
+    "rr":                 RoundRobinScheduler,
+    "backfill":           EASYBackfillScheduler,
+    "preemptive":         PreemptivePriorityScheduler,
+    "weighted_fair":      WeightedFairShareScheduler,
+    "gang":               GangScheduler,
 }
 
 SCHEDULER_LABELS = {
-    "fifo":     "FIFO",
-    "sjf":      "SJF",
-    "fair":     "Fair Share",
-    "edf":      "EDF",
-    "priority": "Priority",
-    "rr":       "Round Robin",
-    "backfill": "EASY Backfill",
+    "fifo":               "FIFO",
+    "sjf":                "SJF",
+    "fair":               "Fair Share",
+    "edf":                "EDF",
+    "priority":           "Priority",
+    "rr":                 "Round Robin",
+    "backfill":           "EASY Backfill",
+    "preemptive":         "Preemptive Priority",
+    "weighted_fair":      "Weighted Fair Share",
+    "gang":               "Gang",
 }
 
 # Distinct, print-safe colour palette
 COLORS = {
-    "fifo":     "#2196F3",
-    "sjf":      "#F44336",
-    "fair":     "#4CAF50",
-    "edf":      "#FF9800",
-    "priority": "#9C27B0",
-    "rr":       "#00BCD4",
-    "backfill": "#E91E63",
+    "fifo":               "#2196F3",
+    "sjf":                "#F44336",
+    "fair":               "#4CAF50",
+    "edf":                "#FF9800",
+    "priority":           "#9C27B0",
+    "rr":                 "#00BCD4",
+    "backfill":           "#E91E63",
+    "preemptive":         "#795548",
+    "weighted_fair":      "#607D8B",
+    "gang":               "#FF5722",
 }
 
 
@@ -132,6 +144,7 @@ def run_one(
 
     sim_end = engine.time
     util = metrics.busy_gpu_time / (total_gpus * sim_end) if sim_end > 0 else 0.0
+    total_cost = sum(metrics.tenant_cost.values())
 
     return {
         "scheduler":               scheduler_name,
@@ -153,6 +166,9 @@ def run_one(
         "sla_wait_violations":     metrics.sla_wait_violations,
         "sla_deadline_violations": metrics.sla_deadline_violations,
         "jain_gpu_time":           metrics.jain_fairness(),
+        "drf_fairness":            metrics.drf_fairness(),
+        "total_cost":              total_cost,
+        "preemptions":             metrics.preemptions,
     }
 
 
@@ -163,13 +179,13 @@ def run_one(
 def print_banner() -> None:
     if not RICH_AVAILABLE or console is None:
         print("=" * 60)
-        print("  GDaaS Simulator — Experiment Runner  v0.2.0")
+        print("  GDaaS Simulator — Experiment Runner  v0.3.0")
         print("  GPU-as-a-Service Discrete-Event Simulator")
         print("=" * 60)
         return
     console.print(
         Panel.fit(
-            "[bold cyan]GDaaS Simulator[/bold cyan]  [dim]v0.2.0[/dim]\n"
+            "[bold cyan]GDaaS Simulator[/bold cyan]  [dim]v0.3.0[/dim]\n"
             "[dim]GPU-as-a-Service Discrete-Event Simulator[/dim]",
             border_style="cyan",
             padding=(0, 2),
@@ -180,7 +196,7 @@ def print_banner() -> None:
 def print_summary_table(df: pd.DataFrame) -> None:
     if not RICH_AVAILABLE or console is None:
         print(df.groupby("scheduler")[
-            ["utilization", "avg_wait", "p95_wait", "jain_gpu_time"]
+            ["utilization", "avg_wait", "p95_wait", "jain_gpu_time", "total_cost"]
         ].mean().to_string())
         return
 
@@ -197,6 +213,9 @@ def print_summary_table(df: pd.DataFrame) -> None:
     table.add_column("SLA Wait Viol.", style="red",    justify="right")
     table.add_column("SLA DL Viol.",   style="red",    justify="right")
     table.add_column("Jain Fairness",  style="blue",   justify="right")
+    table.add_column("DRF Fairness",   style="blue",   justify="right")
+    table.add_column("Total Cost",     style="magenta", justify="right")
+    table.add_column("Preemptions",    style="dim",    justify="right")
 
     summary = df.groupby("scheduler").mean(numeric_only=True).reset_index()
     order = list(SCHEDULER_MAP.keys())
@@ -212,6 +231,9 @@ def print_summary_table(df: pd.DataFrame) -> None:
             _fmt(row.get("sla_wait_violations")),
             _fmt(row.get("sla_deadline_violations")),
             _fmt(row.get("jain_gpu_time"), 4),
+            _fmt(row.get("drf_fairness"), 4),
+            _fmt(row.get("total_cost"), 2),
+            _fmt(row.get("preemptions")),
         )
     console.print(table)
 
@@ -225,13 +247,18 @@ PLOT_METRICS = [
     ("p95_wait",               "P95 Wait Time (time units)"),
     ("utilization",            "GPU Utilization (fraction)"),
     ("jain_gpu_time",          "Jain's Fairness Index"),
+    ("drf_fairness",           "DRF Fairness Index"),
     ("sla_wait_violations",    "SLA Wait Violations (count)"),
     ("sla_deadline_violations","SLA Deadline Violations (count)"),
+    ("total_cost",             "Total Compute Cost"),
+    ("preemptions",            "Preemptions (count)"),
 ]
 
 
 def make_plots(df: pd.DataFrame, schedulers: list[str], outdir: str) -> None:
     for metric, ylabel in PLOT_METRICS:
+        if metric not in df.columns:
+            continue
         fig, ax = plt.subplots(figsize=(8, 5))
         for sch in schedulers:
             sub = (
@@ -282,7 +309,7 @@ def main() -> None:
     ap.add_argument("--arrival_rates", type=float, nargs="+", default=[0.2, 0.5, 0.9])
     ap.add_argument(
         "--schedulers", nargs="+",
-        default=list(SCHEDULER_MAP.keys()),
+        default=["fifo", "sjf", "fair", "edf", "priority", "rr", "backfill"],
         choices=list(SCHEDULER_MAP.keys()),
     )
     ap.add_argument("--config", default=None,
@@ -329,7 +356,7 @@ def main() -> None:
                         progress.update(
                             task,
                             description=(
-                                f"[cyan]{SCHEDULER_LABELS[sch]:14s}[/cyan]"
+                                f"[cyan]{SCHEDULER_LABELS[sch]:20s}[/cyan]"
                                 f" rate=[yellow]{rate}[/yellow]"
                                 f" seed=[dim]{seed}[/dim]"
                             ),

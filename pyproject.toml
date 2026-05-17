@@ -1,6 +1,6 @@
 [project]
 name = "gdaas-sim"
-version = "0.2.0"
+version = "0.3.0"
 description = "GPU-as-a-Service (GDaaS) discrete-event simulator"
 requires-python = ">=3.10"
 dependencies = [
@@ -15,6 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 dev       = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.4.0"]
 dashboard = ["streamlit>=1.32"]
+api       = ["fastapi>=0.100", "uvicorn>=0.23", "pydantic>=2.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
